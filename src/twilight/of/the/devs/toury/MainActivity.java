@@ -2,6 +2,11 @@ package twilight.of.the.devs.toury;
 
 import java.util.Locale;
 
+import twilight.of.the.devs.fragments.CompassFragment;
+import twilight.of.the.devs.fragments.LocationFragment;
+import twilight.of.the.devs.utils.OrientationManager;
+import twilight.of.the.devs.utils.OrientationManager.OnChangedListener;
+
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesClient;
 import com.google.android.gms.common.GooglePlayServicesUtil;
@@ -17,7 +22,9 @@ import android.content.Intent;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
+import android.hardware.SensorManager;
 import android.location.Location;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
@@ -66,6 +73,8 @@ public class MainActivity extends FragmentActivity implements
             GEOFENCE_EXPIRATION_IN_HOURS *
             SECONDS_PER_HOUR *
             MILLISECONDS_PER_SECOND;
+	private static final String TAG = MainActivity.class.getName();
+	
 	
 	/**
 	 * The {@link android.support.v4.view.PagerAdapter} that will provide
@@ -88,6 +97,7 @@ public class MainActivity extends FragmentActivity implements
 	private SharedPreferences mPrefs;
 	private Editor mEditor;
 	private boolean mUpdatesRequested;
+	private OrientationManager mOrientationManager;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +121,8 @@ public class MainActivity extends FragmentActivity implements
 		
 		mLocationClient = new LocationClient(this, this, this);
 		
+		mUpdatesRequested = true;
+		
 	    //mCurrentLocation = mLocationClient.getLastLocation();
 	    
 	    // Create the LocationRequest object
@@ -122,6 +134,33 @@ public class MainActivity extends FragmentActivity implements
         mLocationRequest.setInterval(UPDATE_INTERVAL);
         // Set the fastest update interval to 1 second
         mLocationRequest.setFastestInterval(FASTEST_INTERVAL);
+        SensorManager sensorManager =
+                (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        LocationManager locationManager =
+                (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        mOrientationManager = new OrientationManager(sensorManager, locationManager);
+        mOrientationManager.addOnChangedListener(new OnChangedListener() {
+			
+			@Override
+			public void onOrientationChanged(OrientationManager orientationManager) {
+				Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
+		        if(frag instanceof CompassFragment)
+		        	((CompassFragment)frag).setTextViewText("Your current heading: " + orientationManager.getHeading());
+			}
+			
+			@Override
+			public void onLocationChanged(OrientationManager orientationManager) {
+				// TODO Auto-generated method stub
+				
+			}
+			
+			@Override
+			public void onAccuracyChanged(OrientationManager orientationManager) {
+				// TODO Auto-generated method stub
+				
+			}
+		});
+        //mOrientationManager.start();
 
 	}
 
@@ -199,26 +238,46 @@ public class MainActivity extends FragmentActivity implements
 	 */
 	public class SectionsPagerAdapter extends FragmentPagerAdapter {
 
+		private final String TAG = SectionsPagerAdapter.class.getName();
+		private LocationFragment locFrag;
+		private CompassFragment compassFrag;
+
 		public SectionsPagerAdapter(FragmentManager fm) {
 			super(fm);
 		}
 
 		@Override
 		public Fragment getItem(int position) {
-			// getItem is called to instantiate the fragment for the given page.
-			// Return a DummySectionFragment (defined as a static inner class
-			// below) with the page number as its lone argument.
-			Fragment fragment = new DummySectionFragment();
-			Bundle args = new Bundle();
-			args.putInt(DummySectionFragment.ARG_SECTION_NUMBER, position + 1);
-			fragment.setArguments(args);
+			//Log.d(TAG, ""+position);
+			Fragment fragment = null;
+			if(position == 0){
+				if(locFrag != null)
+					fragment = locFrag;
+				else {
+					Log.d(TAG, "Creating LocationFragment at position: " + position);
+					locFrag = new LocationFragment();
+					fragment = locFrag;
+				}
+				mOrientationManager.stop();
+			} else {
+				if(compassFrag != null){
+					fragment = compassFrag;
+				} else {
+					compassFrag = new CompassFragment();
+					Bundle args = new Bundle();
+					args.putInt(CompassFragment.ARG_SECTION_NUMBER, position + 1);
+					compassFrag.setArguments(args);
+					fragment = compassFrag;
+				}
+				mOrientationManager.start();
+			}
 			return fragment;
 		}
 
 		@Override
 		public int getCount() {
 			// Show 3 total pages.
-			return 3;
+			return 2;
 		}
 
 		@Override
@@ -226,45 +285,11 @@ public class MainActivity extends FragmentActivity implements
 			Locale l = Locale.getDefault();
 			switch (position) {
 			case 0:
-				return getString(R.string.title_section1).toUpperCase(l);
+				return getString(R.string.frag1).toUpperCase(l);
 			case 1:
-				return getString(R.string.title_section2).toUpperCase(l);
-			case 2:
-				return getString(R.string.title_section3).toUpperCase(l);
+				return getString(R.string.frag2).toUpperCase(l);
 			}
 			return null;
-		}
-	}
-
-	/**
-	 * A dummy fragment representing a section of the app, but that simply
-	 * displays dummy text.
-	 */
-	public static class DummySectionFragment extends Fragment {
-		/**
-		 * The fragment argument representing the section number for this
-		 * fragment.
-		 */
-		public static final String ARG_SECTION_NUMBER = "section_number";
-		private TextView mTextView;
-
-		public DummySectionFragment() {
-		}
-
-		@Override
-		public View onCreateView(LayoutInflater inflater, ViewGroup container,
-				Bundle savedInstanceState) {
-			View rootView = inflater.inflate(R.layout.fragment_main_dummy,
-					container, false);
-			mTextView = (TextView) rootView
-					.findViewById(R.id.section_label);
-			mTextView.setText(Integer.toString(getArguments().getInt(
-					ARG_SECTION_NUMBER)));
-			return rootView;
-		}
-		
-		public void setTextViewText(String loc){
-			mTextView.setText(loc);
 		}
 	}
 	
@@ -318,9 +343,9 @@ public class MainActivity extends FragmentActivity implements
 		// Display the connection status
         Toast.makeText(this, "Connected", Toast.LENGTH_SHORT).show();
      // If already requested, start periodic updates
-        if (mUpdatesRequested) {
+        //if (mUpdatesRequested) {
             mLocationClient.requestLocationUpdates(mLocationRequest, this);
-        }
+        //}
 	}
 
 	@Override
@@ -353,6 +378,7 @@ public class MainActivity extends FragmentActivity implements
              * the argument is "this".
              */
            // removeLocationUpdates(this);
+        	mUpdatesRequested = false;
         }
         mLocationClient.disconnect();
         super.onStop();
@@ -390,9 +416,11 @@ public class MainActivity extends FragmentActivity implements
         String msg = "Updated Location: " +
                 Double.toString(location.getLatitude()) + "," +
                 Double.toString(location.getLongitude());
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-        DummySectionFragment frag = (DummySectionFragment) ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
-        frag.setTextViewText(msg);
+        //Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+        //Log.d(TAG, "CurrentItem: "+mViewPager.getCurrentItem());
+        Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
+        if(frag instanceof LocationFragment)
+        	((LocationFragment)frag).setTextViewText(msg);
 	}
 	
 	/**
