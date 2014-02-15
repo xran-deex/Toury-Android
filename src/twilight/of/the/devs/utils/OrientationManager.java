@@ -30,6 +30,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Looper;
+import android.util.Log;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -63,6 +64,8 @@ public class OrientationManager {
      * difference.
      */
     private static final int ARM_DISPLACEMENT_DEGREES = 6;
+
+	protected static final String TAG = OrientationManager.class.getName();
 
     /**
      * Classes should implement this interface if they want to be notified of changes in the user's
@@ -105,6 +108,8 @@ public class OrientationManager {
     private GeomagneticField mGeomagneticField;
     private boolean mHasInterference;
 
+	protected long mTimeSinceLastSensor;
+
     /**
      * The sensor listener used by the orientation manager.
      */
@@ -137,8 +142,12 @@ public class OrientationManager {
                 float magneticHeading = (float) Math.toDegrees(mOrientation[0]);
                 mHeading = MathUtils.mod(computeTrueNorth(magneticHeading), 360.0f)
                         - ARM_DISPLACEMENT_DEGREES;
-
-                notifyOrientationChanged();
+                long time = event.timestamp;
+                if(time - mTimeSinceLastSensor > 20500000L){
+                	notifyOrientationChanged();
+                	//Log.d(TAG, ""+mTimeSinceLastSensor);
+                }
+                mTimeSinceLastSensor = time;
             }
         }
     };

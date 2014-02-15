@@ -28,8 +28,6 @@ public class CompassFragment extends Fragment {
 				container, false);
 		mTextView = (TextView) rootView
 				.findViewById(R.id.section_label);
-//		if(getArguments().getInt(ARG_SECTION_NUMBER) == 1)
-//			mTextView.setText("Your current location: ");
 		return rootView;
 	}
 	

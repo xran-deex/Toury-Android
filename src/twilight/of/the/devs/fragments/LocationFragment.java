@@ -1,12 +1,41 @@
 package twilight.of.the.devs.fragments;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+import java.net.Authenticator;
+import java.net.HttpURLConnection;
+import java.net.PasswordAuthentication;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLEncoder;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.message.BasicHeader;
+import org.apache.http.params.HttpConnectionParams;
+import org.apache.http.protocol.HTTP;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import twilight.of.the.devs.toury.R;
+import android.location.Location;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
+import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.View.OnClickListener;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.TextView;
 
 public class LocationFragment extends Fragment {
@@ -18,6 +47,8 @@ public class LocationFragment extends Fragment {
 	public static final String ARG_SECTION_NUMBER = "section_number";
 	private final String TAG = LocationFragment.class.getName();
 	private TextView mTextView;
+	private Button mButton;
+	private Location mLocation;
 
 	public LocationFragment() {
 	}
@@ -30,11 +61,58 @@ public class LocationFragment extends Fragment {
 		mTextView = (TextView) rootView
 				.findViewById(R.id.section_label);
 		mTextView.setText("Your current location: ");
+		mButton = (Button)rootView.findViewById(R.id.button1);
+		mButton.setOnClickListener(new OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				submitLocation();
+			}
+		});
 		return rootView;
 	}
 	
-	public void setTextViewText(String loc){
+	public void setTextViewText(Location loc){
+		mLocation = loc;
+		
 		if(mTextView != null)
 			mTextView.setText("Your current location: \n" + loc);
+	}
+	
+	public void submitLocation(){
+		new Thread(new Runnable(){
+			public void run(){
+
+					HttpClient client = new DefaultHttpClient();
+	                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+	                HttpResponse response;
+
+	                try {
+	                    HttpPost post = new HttpPost("http://192.168.1.18:8000/api/tours/");
+	                    String authorizationString = "Basic " + Base64.encodeToString(
+	    				        ("randy" + ":" + "greenday").getBytes(),
+	    				        Base64.NO_WRAP); 
+	                    JSONObject jsonParam = new JSONObject();
+	    				jsonParam.put("title", "Post from Android");
+	    				jsonParam.put("description", "This is a description from Toury for Android");
+	    				jsonParam.put("latitude",mLocation.getLatitude());
+	    				jsonParam.put("longitude",mLocation.getLongitude());
+	    				jsonParam.put("radius", 0.01);
+	                    StringEntity se = new StringEntity( jsonParam.toString());  
+	                    se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
+	                    post.addHeader("Authorization", authorizationString);
+	                    post.setEntity(se);
+	                    response = client.execute(post);
+
+	                    /*Checking response */
+	                    if(response!=null){
+	                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+	                    }
+
+	                } catch(Exception e) {
+	                    e.printStackTrace();
+	                }
+			}
+		}).start();
 	}
 }

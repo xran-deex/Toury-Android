@@ -254,7 +254,7 @@ public class MainActivity extends FragmentActivity implements
 				if(locFrag != null)
 					fragment = locFrag;
 				else {
-					Log.d(TAG, "Creating LocationFragment at position: " + position);
+//					Log.d(TAG, "Creating LocationFragment at position: " + position);
 					locFrag = new LocationFragment();
 					fragment = locFrag;
 				}
@@ -264,9 +264,9 @@ public class MainActivity extends FragmentActivity implements
 					fragment = compassFrag;
 				} else {
 					compassFrag = new CompassFragment();
-					Bundle args = new Bundle();
-					args.putInt(CompassFragment.ARG_SECTION_NUMBER, position + 1);
-					compassFrag.setArguments(args);
+//					Bundle args = new Bundle();
+//					args.putInt(CompassFragment.ARG_SECTION_NUMBER, position + 1);
+//					compassFrag.setArguments(args);
 					fragment = compassFrag;
 				}
 				mOrientationManager.start();
@@ -276,7 +276,6 @@ public class MainActivity extends FragmentActivity implements
 
 		@Override
 		public int getCount() {
-			// Show 3 total pages.
 			return 2;
 		}
 
@@ -420,7 +419,7 @@ public class MainActivity extends FragmentActivity implements
         //Log.d(TAG, "CurrentItem: "+mViewPager.getCurrentItem());
         Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
         if(frag instanceof LocationFragment)
-        	((LocationFragment)frag).setTextViewText(msg);
+        	((LocationFragment)frag).setTextViewText(location);
 	}
 	
 	/**
