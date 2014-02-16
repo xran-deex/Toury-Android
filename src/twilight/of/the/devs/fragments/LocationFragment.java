@@ -16,6 +16,7 @@ import java.net.URLEncoder;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
@@ -27,6 +28,7 @@ import org.json.JSONObject;
 
 import twilight.of.the.devs.toury.R;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.util.Base64;
@@ -46,7 +48,7 @@ public class LocationFragment extends Fragment {
 	 */
 	public static final String ARG_SECTION_NUMBER = "section_number";
 	private final String TAG = LocationFragment.class.getName();
-	private TextView mTextView;
+	private TextView mTextView, geofenceText;
 	private Button mButton;
 	private Location mLocation;
 
@@ -61,7 +63,16 @@ public class LocationFragment extends Fragment {
 		mTextView = (TextView) rootView
 				.findViewById(R.id.section_label);
 		mTextView.setText("Your current location: ");
+		geofenceText = (TextView)rootView.findViewById(R.id.geofence);
 		mButton = (Button)rootView.findViewById(R.id.button1);
+		Button geofence = (Button)rootView.findViewById(R.id.geofenceBtn);
+		geofence.setOnClickListener(new OnClickListener() {
+			
+			@Override
+			public void onClick(View v) {
+				fetchGeofence();
+			}
+		});
 		mButton.setOnClickListener(new OnClickListener() {
 			
 			@Override
@@ -72,6 +83,51 @@ public class LocationFragment extends Fragment {
 		return rootView;
 	}
 	
+	protected void fetchGeofence() {
+		new AsyncTask<Void, Void, String>(){
+
+			@Override
+			protected String doInBackground(Void... params) {
+				HttpClient client = new DefaultHttpClient();
+                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+                HttpResponse response;
+
+                try {
+                    HttpGet post = new HttpGet("http://192.168.1.18:8000/api/tours/");
+                    String authorizationString = "Basic " + Base64.encodeToString(
+    				        ("randy" + ":" + "greenday").getBytes(),
+    				        Base64.NO_WRAP); 
+                    
+                    //StringEntity se = new StringEntity( jsonParam.toString());  
+                    //se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
+                    post.addHeader("Authorization", authorizationString);
+                    //post.setEntity(se);
+                    response = client.execute(post);
+                    
+                    
+
+                    /*Checking response */
+                    if(response!=null){
+                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+                        String res = new DataInputStream(in).readLine();
+                        JSONObject obj = new JSONObject(res);
+                        return obj.toString();
+                    }
+
+                } catch(Exception e) {
+                    e.printStackTrace();
+                }
+				return null;
+			}
+			
+			@Override
+			protected void onPostExecute(String result) {
+				geofenceText.setText(result);
+				super.onPostExecute(result);
+			}
+		}.execute();
+	}
+
 	public void setTextViewText(Location loc){
 		mLocation = loc;
 		
@@ -83,35 +139,35 @@ public class LocationFragment extends Fragment {
 		new Thread(new Runnable(){
 			public void run(){
 
-					HttpClient client = new DefaultHttpClient();
-	                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
-	                HttpResponse response;
+				HttpClient client = new DefaultHttpClient();
+                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+                HttpResponse response;
 
-	                try {
-	                    HttpPost post = new HttpPost("http://192.168.1.18:8000/api/tours/");
-	                    String authorizationString = "Basic " + Base64.encodeToString(
-	    				        ("randy" + ":" + "greenday").getBytes(),
-	    				        Base64.NO_WRAP); 
-	                    JSONObject jsonParam = new JSONObject();
-	    				jsonParam.put("title", "Post from Android");
-	    				jsonParam.put("description", "This is a description from Toury for Android");
-	    				jsonParam.put("latitude",mLocation.getLatitude());
-	    				jsonParam.put("longitude",mLocation.getLongitude());
-	    				jsonParam.put("radius", 0.01);
-	                    StringEntity se = new StringEntity( jsonParam.toString());  
-	                    se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
-	                    post.addHeader("Authorization", authorizationString);
-	                    post.setEntity(se);
-	                    response = client.execute(post);
+                try {
+                    HttpPost post = new HttpPost("http://192.168.1.18:8000/api/tours/");
+                    String authorizationString = "Basic " + Base64.encodeToString(
+    				        ("randy" + ":" + "greenday").getBytes(),
+    				        Base64.NO_WRAP); 
+                    JSONObject jsonParam = new JSONObject();
+    				jsonParam.put("title", "Post from Android");
+    				jsonParam.put("description", "This is a description from Toury for Android");
+    				jsonParam.put("latitude",mLocation.getLatitude());
+    				jsonParam.put("longitude",mLocation.getLongitude());
+    				jsonParam.put("radius", 0.01);
+                    StringEntity se = new StringEntity( jsonParam.toString());  
+                    se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
+                    post.addHeader("Authorization", authorizationString);
+                    post.setEntity(se);
+                    response = client.execute(post);
 
-	                    /*Checking response */
-	                    if(response!=null){
-	                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
-	                    }
+                    /*Checking response */
+                    if(response!=null){
+                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+                    }
 
-	                } catch(Exception e) {
-	                    e.printStackTrace();
-	                }
+                } catch(Exception e) {
+                    e.printStackTrace();
+                }
 			}
 		}).start();
 	}

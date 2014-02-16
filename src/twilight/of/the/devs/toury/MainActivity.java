@@ -1,6 +1,18 @@
 package twilight.of.the.devs.toury;
 
+import java.io.DataInputStream;
+import java.io.InputStream;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Locale;
+
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.params.HttpConnectionParams;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import twilight.of.the.devs.fragments.CompassFragment;
 import twilight.of.the.devs.fragments.LocationFragment;
@@ -9,14 +21,19 @@ import twilight.of.the.devs.utils.OrientationManager.OnChangedListener;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesClient;
+import com.google.android.gms.common.GooglePlayServicesClient.ConnectionCallbacks;
+import com.google.android.gms.common.GooglePlayServicesClient.OnConnectionFailedListener;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.LocationClient;
+import com.google.android.gms.location.LocationClient.OnAddGeofencesResultListener;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationStatusCodes;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
@@ -25,6 +42,7 @@ import android.content.SharedPreferences.Editor;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
@@ -33,6 +51,7 @@ import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.app.NavUtils;
 import android.support.v4.view.ViewPager;
+import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -44,8 +63,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends FragmentActivity implements
-					GooglePlayServicesClient.ConnectionCallbacks,
-					GooglePlayServicesClient.OnConnectionFailedListener,
+					ConnectionCallbacks,
+					OnConnectionFailedListener,
+					OnAddGeofencesResultListener,
 					LocationListener {
 	
 	// Milliseconds per second
@@ -98,12 +118,22 @@ public class MainActivity extends FragmentActivity implements
 	private Editor mEditor;
 	private boolean mUpdatesRequested;
 	private OrientationManager mOrientationManager;
+    // Stores the PendingIntent used to request geofence monitoring
+    private PendingIntent mGeofenceRequestIntent, mTransitionPendingIntent;
+    // Defines the allowable request types.
+    public enum REQUEST_TYPE {ADD}
+    private REQUEST_TYPE mRequestType;
+    // Flag that indicates if a request is underway.
+    private boolean mInProgress;
+	private List<Geofence> mCurrentGeofences;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 
+		// Start with the request flag set to false
+        mInProgress = false;
 		// Create the adapter that will return a fragment for each of the three
 		// primary sections of the app.
 		mSectionsPagerAdapter = new SectionsPagerAdapter(
@@ -119,11 +149,13 @@ public class MainActivity extends FragmentActivity implements
         // Get a SharedPreferences editor
         mEditor = mPrefs.edit();
 		
-		mLocationClient = new LocationClient(this, this, this);
+		//mLocationClient = new LocationClient(this, this, this);
 		
 		mUpdatesRequested = true;
 		
 	    //mCurrentLocation = mLocationClient.getLastLocation();
+		getGeofenceList();
+		
 	    
 	    // Create the LocationRequest object
         mLocationRequest = LocationRequest.create();
@@ -345,6 +377,15 @@ public class MainActivity extends FragmentActivity implements
         //if (mUpdatesRequested) {
             mLocationClient.requestLocationUpdates(mLocationRequest, this);
         //}
+            switch (mRequestType) {
+            case ADD :
+                // Get the PendingIntent for the request
+                mTransitionPendingIntent =
+                        getTransitionPendingIntent();
+                // Send a request to add the current geofences
+                mLocationClient.addGeofences(
+                        mCurrentGeofences, mTransitionPendingIntent, this);
+        }
 	}
 
 	@Override
@@ -352,6 +393,10 @@ public class MainActivity extends FragmentActivity implements
 		// Display the connection status
         Toast.makeText(this, "Disconnected. Please re-connect.",
                 Toast.LENGTH_SHORT).show();
+     // Turn off the request flag
+        mInProgress = false;
+        // Destroy the current location client
+        mLocationClient = null;
 	}
 	
 	/*
@@ -361,7 +406,7 @@ public class MainActivity extends FragmentActivity implements
     protected void onStart() {
         super.onStart();
         // Connect the client.
-        mLocationClient.connect();
+       // mLocationClient.connect();
     }
 
     /*
@@ -420,235 +465,138 @@ public class MainActivity extends FragmentActivity implements
         Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
         if(frag instanceof LocationFragment)
         	((LocationFragment)frag).setTextViewText(location);
+	}	
+
+	@Override
+	public void onAddGeofencesResult(int statusCode, String[] arg1) {
+		// If adding the geofences was successful
+        if (LocationStatusCodes.SUCCESS == statusCode) {
+            /*
+             * Handle successful addition of geofences here.
+             * You can send out a broadcast intent or update the UI.
+             * geofences into the Intent's extended data.
+             */
+        	Log.d(TAG, "Added geofence: success");
+        } else {
+        // If adding the geofences failed
+            /*
+             * Report errors here.
+             * You can log the error using Log.e() or update
+             * the UI.
+             */
+        	Log.d(TAG, "Error while adding geofence");
+        }
+        // Turn off the in progress flag and disconnect the client
+        mInProgress = false;
+        //mLocationClient.disconnect();
 	}
 	
-	/**
-     * A single Geofence object, defined by its center and radius.
+	/*
+     * Create a PendingIntent that triggers an IntentService in your
+     * app when a geofence transition occurs.
      */
-    public class SimpleGeofence {
-            // Instance variables
-            private final String mId;
-            private final double mLatitude;
-            private final double mLongitude;
-            private final float mRadius;
-            private long mExpirationDuration;
-            private int mTransitionType;
-
-        /**
-         * @param geofenceId The Geofence's request ID
-         * @param latitude Latitude of the Geofence's center.
-         * @param longitude Longitude of the Geofence's center.
-         * @param radius Radius of the geofence circle.
-         * @param expiration Geofence expiration duration
-         * @param transition Type of Geofence transition.
+    private PendingIntent getTransitionPendingIntent() {
+        // Create an explicit Intent
+        Intent intent = new Intent(this,
+                ReceiveTransitionsIntentService.class);
+        /*
+         * Return the PendingIntent
          */
-        public SimpleGeofence(
-                String geofenceId,
-                double latitude,
-                double longitude,
-                float radius,
-                long expiration,
-                int transition) {
-            // Set the instance fields from the constructor
-            this.mId = geofenceId;
-            this.mLatitude = latitude;
-            this.mLongitude = longitude;
-            this.mRadius = radius;
-            this.mExpirationDuration = expiration;
-            this.mTransitionType = transition;
-        }
-        // Instance field getters
-        public String getId() {
-            return mId;
-        }
-        public double getLatitude() {
-            return mLatitude;
-        }
-        public double getLongitude() {
-            return mLongitude;
-        }
-        public float getRadius() {
-            return mRadius;
-        }
-        public long getExpirationDuration() {
-            return mExpirationDuration;
-        }
-        public int getTransitionType() {
-            return mTransitionType;
-        }
-        /**
-         * Creates a Location Services Geofence object from a
-         * SimpleGeofence.
-         *
-         * @return A Geofence object
+        return PendingIntent.getService(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+	
+    
+    /**
+     * Start a request for geofence monitoring by calling
+     * LocationClient.connect().
+     */
+    public void addGeofences() {
+        // Start a request to add geofences
+        mRequestType = REQUEST_TYPE.ADD;
+        /*
+         * Test for Google Play services after setting the request type.
+         * If Google Play services isn't present, the proper request
+         * can be restarted.
          */
-        public Geofence toGeofence() {
-            // Build a new Geofence object
-            return new Geofence.Builder()
-                    .setRequestId(getId())
-                    .setTransitionTypes(mTransitionType)
-                    .setCircularRegion(
-                            getLatitude(), getLongitude(), getRadius())
-                    .setExpirationDuration(mExpirationDuration)
-                    .build();
+        if (!servicesConnected()) {
+            return;
+        }
+        /*
+         * Create a new location client object. Since the current
+         * activity class implements ConnectionCallbacks and
+         * OnConnectionFailedListener, pass the current activity object
+         * as the listener for both parameters
+         */
+        mLocationClient = new LocationClient(this, this, this);
+        // If a request is not already underway
+        if (!mInProgress) {
+            // Indicate that a request is underway
+            mInProgress = true;
+            // Request a connection from the client to Location Services
+            mLocationClient.connect();
+        } else {
+            /*
+             * A request is already underway. You can handle
+             * this situation by disconnecting the client,
+             * re-setting the flag, and then re-trying the
+             * request.
+             */
         }
     }
     
-    /**
-     * Storage for geofence values, implemented in SharedPreferences.
-     */
-    public class SimpleGeofenceStore {
-        // Keys for flattened geofences stored in SharedPreferences
-        public static final String KEY_LATITUDE =
-                "com.example.android.geofence.KEY_LATITUDE";
-        public static final String KEY_LONGITUDE =
-                "com.example.android.geofence.KEY_LONGITUDE";
-        public static final String KEY_RADIUS =
-                "com.example.android.geofence.KEY_RADIUS";
-        public static final String KEY_EXPIRATION_DURATION =
-                "com.example.android.geofence.KEY_EXPIRATION_DURATION";
-        public static final String KEY_TRANSITION_TYPE =
-                "com.example.android.geofence.KEY_TRANSITION_TYPE";
-        // The prefix for flattened geofence keys
-        public static final String KEY_PREFIX =
-                "com.example.android.geofence.KEY";
-        /*
-         * Invalid values, used to test geofence storage when
-         * retrieving geofences
-         */
-        public static final long INVALID_LONG_VALUE = -999l;
-        public static final float INVALID_FLOAT_VALUE = -999.0f;
-        public static final int INVALID_INT_VALUE = -999;
-        // The SharedPreferences object in which geofences are stored
-        private final SharedPreferences mPrefs;
-        // The name of the SharedPreferences
-        private static final String SHARED_PREFERENCES =
-                "SharedPreferences";
-        // Create the SharedPreferences storage with private access only
-        public SimpleGeofenceStore(Context context) {
-            mPrefs =
-                    context.getSharedPreferences(
-                            SHARED_PREFERENCES,
-                            Context.MODE_PRIVATE);
-        }
-        /**
-         * Returns a stored geofence by its id, or returns null
-         * if it's not found.
-         *
-         * @param id The ID of a stored geofence
-         * @return A geofence defined by its center and radius. See
-         */
-        public SimpleGeofence getGeofence(String id) {
-            /*
-             * Get the latitude for the geofence identified by id, or
-             * INVALID_FLOAT_VALUE if it doesn't exist
-             */
-            double lat = mPrefs.getFloat(
-                    getGeofenceFieldKey(id, KEY_LATITUDE),
-                    INVALID_FLOAT_VALUE);
-            /*
-             * Get the longitude for the geofence identified by id, or
-             * INVALID_FLOAT_VALUE if it doesn't exist
-             */
-            double lng = mPrefs.getFloat(
-                    getGeofenceFieldKey(id, KEY_LONGITUDE),
-                    INVALID_FLOAT_VALUE);
-            /*
-             * Get the radius for the geofence identified by id, or
-             * INVALID_FLOAT_VALUE if it doesn't exist
-             */
-            float radius = mPrefs.getFloat(
-                    getGeofenceFieldKey(id, KEY_RADIUS),
-                    INVALID_FLOAT_VALUE);
-            /*
-             * Get the expiration duration for the geofence identified
-             * by id, or INVALID_LONG_VALUE if it doesn't exist
-             */
-            long expirationDuration = mPrefs.getLong(
-                    getGeofenceFieldKey(id, KEY_EXPIRATION_DURATION),
-                    INVALID_LONG_VALUE);
-            /*
-             * Get the transition type for the geofence identified by
-             * id, or INVALID_INT_VALUE if it doesn't exist
-             */
-            int transitionType = mPrefs.getInt(
-                    getGeofenceFieldKey(id, KEY_TRANSITION_TYPE),
-                    INVALID_INT_VALUE);
-            // If none of the values is incorrect, return the object
-            if (
-                lat != INVALID_FLOAT_VALUE &&
-                lng != INVALID_FLOAT_VALUE &&
-                radius != INVALID_FLOAT_VALUE &&
-                expirationDuration !=
-                        INVALID_LONG_VALUE &&
-                transitionType != INVALID_INT_VALUE) {
+    public void getGeofenceList(){
+    	List<Geofence> result = new LinkedList<Geofence>();
+    	
+    	new AsyncTask<Void, Void, List<Geofence>>(){
 
-                // Return a true Geofence object
-                return new SimpleGeofence(
-                        id, lat, lng, radius, expirationDuration,
-                        transitionType);
-            // Otherwise, return null.
-            } else {
-                return null;
-            }
-        }
-        /**
-         * Save a geofence.
-         * @param geofence The SimpleGeofence containing the
-         * values you want to save in SharedPreferences
-         */
-        public void setGeofence(String id, SimpleGeofence geofence) {
-            /*
-             * Get a SharedPreferences editor instance. Among other
-             * things, SharedPreferences ensures that updates are atomic
-             * and non-concurrent
-             */
-            Editor editor = mPrefs.edit();
-            // Write the Geofence values to SharedPreferences
-            editor.putFloat(
-                    getGeofenceFieldKey(id, KEY_LATITUDE),
-                    (float) geofence.getLatitude());
-            editor.putFloat(
-                    getGeofenceFieldKey(id, KEY_LONGITUDE),
-                    (float) geofence.getLongitude());
-            editor.putFloat(
-                    getGeofenceFieldKey(id, KEY_RADIUS),
-                    geofence.getRadius());
-            editor.putLong(
-                    getGeofenceFieldKey(id, KEY_EXPIRATION_DURATION),
-                    geofence.getExpirationDuration());
-            editor.putInt(
-                    getGeofenceFieldKey(id, KEY_TRANSITION_TYPE),
-                    geofence.getTransitionType());
-            // Commit the changes
-            editor.commit();
-        }
-        public void clearGeofence(String id) {
-            /*
-             * Remove a flattened geofence object from storage by
-             * removing all of its keys
-             */
-            Editor editor = mPrefs.edit();
-            editor.remove(getGeofenceFieldKey(id, KEY_LATITUDE));
-            editor.remove(getGeofenceFieldKey(id, KEY_LONGITUDE));
-            editor.remove(getGeofenceFieldKey(id, KEY_RADIUS));
-            editor.remove(getGeofenceFieldKey(id,
-                    KEY_EXPIRATION_DURATION));
-            editor.remove(getGeofenceFieldKey(id, KEY_TRANSITION_TYPE));
-            editor.commit();
-        }
-        /**
-         * Given a Geofence object's ID and the name of a field
-         * (for example, KEY_LATITUDE), return the key name of the
-         * object's values in SharedPreferences.
-         *
-         * @param id The ID of a Geofence object
-         * @param fieldName The field represented by the key
-         * @return The full key name of a value in SharedPreferences
-         */
-        private String getGeofenceFieldKey(String id,
-                String fieldName) {
-            return KEY_PREFIX + "_" + id + "_" + fieldName;
-        }
+			@Override
+			protected List<Geofence> doInBackground(Void... params) {
+				List<Geofence> result = new LinkedList<Geofence>();
+				HttpClient client = new DefaultHttpClient();
+                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+                HttpResponse response;
+
+                try {
+                    HttpGet post = new HttpGet("http://192.168.1.18:8000/api/tours/");
+                    String authorizationString = "Basic " + Base64.encodeToString(
+    				        ("randy" + ":" + "greenday").getBytes(),
+    				        Base64.NO_WRAP); 
+                    
+                    
+                    post.addHeader("Authorization", authorizationString);
+                    //post.setEntity(se);
+                    response = client.execute(post);
+                    
+                    
+
+                    /*Checking response */
+                    if(response!=null){
+                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+                        String res = new DataInputStream(in).readLine();
+                        JSONObject obj = new JSONObject(res);
+                        JSONArray results = obj.getJSONArray("results");
+                        mCurrentGeofences = new LinkedList<Geofence>();
+                        for(int i = 1; i <= results.length(); i++){
+                        	JSONObject j = results.getJSONObject(i-1);
+                        	SimpleGeofence g = new SimpleGeofence(""+i, j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
+                        	mCurrentGeofences.add(g.toGeofence());
+                        }
+                    }
+
+                } catch(Exception e) {
+                    e.printStackTrace();
+                }
+                addGeofences();
+				return null;
+			}
+    		
+    	}.execute();
+    	
+    	
     }
+
 }
