@@ -26,7 +26,9 @@ import org.apache.http.protocol.HTTP;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import twilight.of.the.devs.toury.MainActivity;
 import twilight.of.the.devs.toury.R;
+import twilight.of.the.devs.utils.OrientationManager;
 import android.location.Location;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -58,7 +60,7 @@ public class LocationFragment extends Fragment {
 	@Override
 	public View onCreateView(LayoutInflater inflater, ViewGroup container,
 			Bundle savedInstanceState) {
-		View rootView = inflater.inflate(R.layout.fragment_main_dummy,
+		View rootView = inflater.inflate(R.layout.fragment,
 				container, false);
 		mTextView = (TextView) rootView
 				.findViewById(R.id.section_label);
@@ -93,15 +95,12 @@ public class LocationFragment extends Fragment {
                 HttpResponse response;
 
                 try {
-                    HttpGet post = new HttpGet("http://192.168.1.18:8000/api/tours/");
+                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
                     String authorizationString = "Basic " + Base64.encodeToString(
     				        ("randy" + ":" + "greenday").getBytes(),
     				        Base64.NO_WRAP); 
                     
-                    //StringEntity se = new StringEntity( jsonParam.toString());  
-                    //se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
                     post.addHeader("Authorization", authorizationString);
-                    //post.setEntity(se);
                     response = client.execute(post);
                     
                     
@@ -142,9 +141,10 @@ public class LocationFragment extends Fragment {
 				HttpClient client = new DefaultHttpClient();
                 HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
                 HttpResponse response;
+                OrientationManager om = ((MainActivity)getActivity()).getOM();
 
                 try {
-                    HttpPost post = new HttpPost("http://192.168.1.18:8000/api/tours/");
+                    HttpPost post = new HttpPost("http://valis.strangled.net:9000/api/tours/");
                     String authorizationString = "Basic " + Base64.encodeToString(
     				        ("randy" + ":" + "greenday").getBytes(),
     				        Base64.NO_WRAP); 
@@ -153,7 +153,8 @@ public class LocationFragment extends Fragment {
     				jsonParam.put("description", "This is a description from Toury for Android");
     				jsonParam.put("latitude",mLocation.getLatitude());
     				jsonParam.put("longitude",mLocation.getLongitude());
-    				jsonParam.put("radius", 0.01);
+    				jsonParam.put("radius", 5);
+    				jsonParam.put("direction", om.getHeading());
                     StringEntity se = new StringEntity( jsonParam.toString());  
                     se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
                     post.addHeader("Authorization", authorizationString);

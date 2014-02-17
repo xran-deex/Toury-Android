@@ -27,6 +27,7 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.LocationClient;
 import com.google.android.gms.location.LocationClient.OnAddGeofencesResultListener;
+import com.google.android.gms.location.LocationClient.OnRemoveGeofencesResultListener;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationStatusCodes;
@@ -66,6 +67,7 @@ public class MainActivity extends FragmentActivity implements
 					ConnectionCallbacks,
 					OnConnectionFailedListener,
 					OnAddGeofencesResultListener,
+					OnRemoveGeofencesResultListener,
 					LocationListener {
 	
 	// Milliseconds per second
@@ -121,7 +123,7 @@ public class MainActivity extends FragmentActivity implements
     // Stores the PendingIntent used to request geofence monitoring
     private PendingIntent mGeofenceRequestIntent, mTransitionPendingIntent;
     // Defines the allowable request types.
-    public enum REQUEST_TYPE {ADD}
+    public enum REQUEST_TYPE {ADD, CONNECT}
     private REQUEST_TYPE mRequestType;
     // Flag that indicates if a request is underway.
     private boolean mInProgress;
@@ -177,23 +179,17 @@ public class MainActivity extends FragmentActivity implements
 			public void onOrientationChanged(OrientationManager orientationManager) {
 				Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
 		        if(frag instanceof CompassFragment)
-		        	((CompassFragment)frag).setTextViewText("Your current heading: " + orientationManager.getHeading());
+		        	((CompassFragment)frag).setTextViewText("Your current heading: " + mOrientationManager.getHeading());
 			}
 			
 			@Override
 			public void onLocationChanged(OrientationManager orientationManager) {
-				// TODO Auto-generated method stub
-				
 			}
 			
 			@Override
 			public void onAccuracyChanged(OrientationManager orientationManager) {
-				// TODO Auto-generated method stub
-				
 			}
 		});
-        //mOrientationManager.start();
-
 	}
 
 	@Override
@@ -280,28 +276,23 @@ public class MainActivity extends FragmentActivity implements
 
 		@Override
 		public Fragment getItem(int position) {
-			//Log.d(TAG, ""+position);
 			Fragment fragment = null;
 			if(position == 0){
 				if(locFrag != null)
 					fragment = locFrag;
 				else {
-//					Log.d(TAG, "Creating LocationFragment at position: " + position);
 					locFrag = new LocationFragment();
 					fragment = locFrag;
 				}
-				mOrientationManager.stop();
+				//mOrientationManager.stop();
 			} else {
 				if(compassFrag != null){
 					fragment = compassFrag;
 				} else {
 					compassFrag = new CompassFragment();
-//					Bundle args = new Bundle();
-//					args.putInt(CompassFragment.ARG_SECTION_NUMBER, position + 1);
-//					compassFrag.setArguments(args);
 					fragment = compassFrag;
 				}
-				mOrientationManager.start();
+				//mOrientationManager.start();
 			}
 			return fragment;
 		}
@@ -322,6 +313,10 @@ public class MainActivity extends FragmentActivity implements
 			}
 			return null;
 		}
+	}
+	
+	public OrientationManager getOM(){
+		return mOrientationManager;
 	}
 	
 	// Define a DialogFragment that displays the error dialog
@@ -383,8 +378,12 @@ public class MainActivity extends FragmentActivity implements
                 mTransitionPendingIntent =
                         getTransitionPendingIntent();
                 // Send a request to add the current geofences
+                //Log.d(TAG, "Removing geofences");
+//                mLocationClient.removeGeofences(mTransitionPendingIntent, this);
                 mLocationClient.addGeofences(
                         mCurrentGeofences, mTransitionPendingIntent, this);
+            case CONNECT:
+            	return;
         }
 	}
 
@@ -432,6 +431,7 @@ public class MainActivity extends FragmentActivity implements
     protected void onPause() {
     	// Save the current setting for updates
         mEditor.putBoolean("KEY_UPDATES_ON", mUpdatesRequested);
+        mOrientationManager.stop();
         mEditor.commit();
     	super.onPause();
     }
@@ -451,6 +451,7 @@ public class MainActivity extends FragmentActivity implements
             mEditor.putBoolean("KEY_UPDATES_ON", false);
             mEditor.commit();
         }
+        mOrientationManager.start();
     	super.onResume();
     }
 
@@ -561,14 +562,13 @@ public class MainActivity extends FragmentActivity implements
                 HttpResponse response;
 
                 try {
-                    HttpGet post = new HttpGet("http://192.168.1.18:8000/api/tours/");
+                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
                     String authorizationString = "Basic " + Base64.encodeToString(
     				        ("randy" + ":" + "greenday").getBytes(),
     				        Base64.NO_WRAP); 
                     
                     
                     post.addHeader("Authorization", authorizationString);
-                    //post.setEntity(se);
                     response = client.execute(post);
                     
                     
@@ -590,7 +590,14 @@ public class MainActivity extends FragmentActivity implements
                 } catch(Exception e) {
                     e.printStackTrace();
                 }
-                addGeofences();
+                if(!mCurrentGeofences.isEmpty())
+                	addGeofences();
+                else {
+                	mRequestType = REQUEST_TYPE.CONNECT;
+                	mLocationClient = new LocationClient(MainActivity.this, MainActivity.this, MainActivity.this);
+                	mLocationClient.connect();
+                }
+                	
 				return null;
 			}
     		
@@ -598,5 +605,19 @@ public class MainActivity extends FragmentActivity implements
     	
     	
     }
+
+	@Override
+	public void onRemoveGeofencesByPendingIntentResult(int arg0,
+			PendingIntent arg1) {
+		if(arg0 == LocationStatusCodes.SUCCESS)
+			Log.d(TAG, "Geofences removed successfully");
+		
+	}
+
+	@Override
+	public void onRemoveGeofencesByRequestIdsResult(int arg0, String[] arg1) {
+		// TODO Auto-generated method stub
+		
+	}
 
 }
