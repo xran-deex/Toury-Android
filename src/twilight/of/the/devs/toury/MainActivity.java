@@ -2,9 +2,12 @@ package twilight.of.the.devs.toury;
 
 import java.io.DataInputStream;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
@@ -33,12 +36,19 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationStatusCodes;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.PendingIntent;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.IntentSender;
 import android.content.SharedPreferences;
+import android.content.DialogInterface.OnCancelListener;
 import android.content.SharedPreferences.Editor;
 import android.hardware.SensorManager;
 import android.location.Location;
@@ -51,6 +61,7 @@ import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.app.NavUtils;
+import android.support.v4.content.LocalBroadcastManager;
 import android.support.v4.view.ViewPager;
 import android.util.Base64;
 import android.util.Log;
@@ -128,11 +139,23 @@ public class MainActivity extends FragmentActivity implements
     // Flag that indicates if a request is underway.
     private boolean mInProgress;
 	private List<Geofence> mCurrentGeofences;
+	private BluetoothAdapter mBluetoothAdapter;
+	private HashMap<String, BluetoothDevice> devices;
+	private BluetoothDevice mConnectedDevice;
+	
+	private BroadcastReceiver mReceiver = new BroadcastReceiver() {
+		
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			new ConnectThread(mBluetoothAdapter, mConnectedDevice).execute(intent.getStringExtra("loc"));
+		}
+	};
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+		LocalBroadcastManager.getInstance(this).registerReceiver(mReceiver, new IntentFilter("location"));
 
 		// Start with the request flag set to false
         mInProgress = false;
@@ -190,6 +213,60 @@ public class MainActivity extends FragmentActivity implements
 			public void onAccuracyChanged(OrientationManager orientationManager) {
 			}
 		});
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+		if (mBluetoothAdapter == null) {
+		    Toast.makeText(this, "Bluetooth not available", Toast.LENGTH_SHORT).show();
+		    finish();
+		}
+        Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+        devices = new HashMap<String, BluetoothDevice>();
+    	// If there are paired devices
+    	if (pairedDevices.size() > 0) {
+    	    // Loop through paired devices
+    	    for (BluetoothDevice device : pairedDevices) {
+    	        // Add the name and address to an array adapter to show in a ListView
+    	        Log.d(TAG, device.getName() + "\n" + device.getAddress());
+    	        mConnectedDevice = device;
+    	        devices.put(device.getName(), device);
+    	    }
+    	}
+    	if(mConnectedDevice == null){
+    		Toast.makeText(this, "No connected devices", Toast.LENGTH_SHORT).show();
+    	}
+    	CharSequence[] list = new CharSequence[devices.keySet().size()];
+		int i = 0;
+		for(Iterator<String> it = devices.keySet().iterator(); it.hasNext(); ){
+			list[i] = it.next();
+			i++;
+		}
+    	displayDialogList(list);
+        
+	}
+	
+	public BluetoothAdapter getBTAdapter(){
+		return mBluetoothAdapter;
+	}
+	
+	public BluetoothDevice getBTDevice(){
+		return mConnectedDevice;
+	}
+	
+	public void displayDialogList(final CharSequence[] list){
+		
+		AlertDialog.Builder builder = new AlertDialog.Builder(this);
+	    builder.setTitle("Select a device")
+	           .setItems(list, new DialogInterface.OnClickListener() {
+	               public void onClick(DialogInterface dialog, int which) {
+		               mConnectedDevice = devices.get(list[which]);
+	           }
+	    }).setOnCancelListener(new OnCancelListener() {
+			
+			@Override
+			public void onCancel(DialogInterface dialog) {
+//				MainActivity.this.finish();
+			}
+		});
+	    builder.create().show();
 	}
 
 	@Override
@@ -378,13 +455,12 @@ public class MainActivity extends FragmentActivity implements
                 mTransitionPendingIntent =
                         getTransitionPendingIntent();
                 // Send a request to add the current geofences
-                //Log.d(TAG, "Removing geofences");
 //                mLocationClient.removeGeofences(mTransitionPendingIntent, this);
                 mLocationClient.addGeofences(
                         mCurrentGeofences, mTransitionPendingIntent, this);
             case CONNECT:
             	return;
-        }
+            }
 	}
 
 	@Override
@@ -461,8 +537,7 @@ public class MainActivity extends FragmentActivity implements
         String msg = "Updated Location: " +
                 Double.toString(location.getLatitude()) + "," +
                 Double.toString(location.getLongitude());
-        //Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-        //Log.d(TAG, "CurrentItem: "+mViewPager.getCurrentItem());
+        
         Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
         if(frag instanceof LocationFragment)
         	((LocationFragment)frag).setTextViewText(location);
@@ -582,7 +657,7 @@ public class MainActivity extends FragmentActivity implements
                         mCurrentGeofences = new LinkedList<Geofence>();
                         for(int i = 1; i <= results.length(); i++){
                         	JSONObject j = results.getJSONObject(i-1);
-                        	SimpleGeofence g = new SimpleGeofence(""+i, j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
+                        	SimpleGeofence g = new SimpleGeofence(j.getString("url"), j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
                         	mCurrentGeofences.add(g.toGeofence());
                         }
                     }

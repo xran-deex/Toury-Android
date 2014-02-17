@@ -13,6 +13,7 @@ public class SimpleGeofence {
         private final float mRadius;
         private long mExpirationDuration;
         private int mTransitionType;
+		private String mDescription;
 
     /**
      * @param geofenceId The Geofence's request ID
@@ -55,6 +56,12 @@ public class SimpleGeofence {
     }
     public int getTransitionType() {
         return mTransitionType;
+    }
+    public String getDescription(){
+    	return mDescription;
+    }
+    public void setDescription(String d){
+    	mDescription = d;
     }
     /**
      * Creates a Location Services Geofence object from a
