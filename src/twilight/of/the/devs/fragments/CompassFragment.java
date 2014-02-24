@@ -27,7 +27,9 @@ public class CompassFragment extends Fragment {
 		View rootView = inflater.inflate(R.layout.fragment,
 				container, false);
 		mTextView = (TextView) rootView
-				.findViewById(R.id.section_label);
+				.findViewById(R.id.current_location);
+		TextView title = (TextView)rootView.findViewById(R.id.fragment_title);
+		title.setText("Current Location:");
 		Button btn = (Button)rootView.findViewById(R.id.geofenceBtn);
 		btn.setVisibility(View.INVISIBLE);
 		Button btn2 = (Button)rootView.findViewById(R.id.button1);
@@ -37,6 +39,6 @@ public class CompassFragment extends Fragment {
 	
 	public void setTextViewText(String loc){
 		if(mTextView != null)
-			mTextView.setText("Your current heading: \n" + loc);
+			mTextView.setText(loc);
 	}
 }

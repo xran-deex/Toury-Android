@@ -19,6 +19,8 @@ import org.json.JSONObject;
 
 import twilight.of.the.devs.fragments.CompassFragment;
 import twilight.of.the.devs.fragments.LocationFragment;
+import twilight.of.the.devs.mylibrary.SimpleGeofence;
+import twilight.of.the.devs.provider.TouryProvider.TouryProviderMetaData;
 import twilight.of.the.devs.utils.OrientationManager;
 import twilight.of.the.devs.utils.OrientationManager.OnChangedListener;
 
@@ -38,6 +40,7 @@ import com.google.android.gms.location.LocationStatusCodes;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -50,6 +53,7 @@ import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.DialogInterface.OnCancelListener;
 import android.content.SharedPreferences.Editor;
+import android.database.Cursor;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationManager;
@@ -61,6 +65,7 @@ import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.app.NavUtils;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v4.view.ViewPager;
 import android.util.Base64;
@@ -134,7 +139,7 @@ public class MainActivity extends FragmentActivity implements
     // Stores the PendingIntent used to request geofence monitoring
     private PendingIntent mGeofenceRequestIntent, mTransitionPendingIntent;
     // Defines the allowable request types.
-    public enum REQUEST_TYPE {ADD, CONNECT}
+    public enum REQUEST_TYPE {ADD, CONNECT, REMOVE_ALL}
     private REQUEST_TYPE mRequestType;
     // Flag that indicates if a request is underway.
     private boolean mInProgress;
@@ -142,12 +147,61 @@ public class MainActivity extends FragmentActivity implements
 	private BluetoothAdapter mBluetoothAdapter;
 	private HashMap<String, BluetoothDevice> devices;
 	private BluetoothDevice mConnectedDevice;
+	private HashMap<SimpleGeofence, Integer> mTriggeredGeofences;
 	
 	private BroadcastReceiver mReceiver = new BroadcastReceiver() {
 		
 		@Override
 		public void onReceive(Context context, Intent intent) {
-			new ConnectThread(mBluetoothAdapter, mConnectedDevice).execute(intent.getStringExtra("loc"));
+			String id = intent.getStringExtra("geofence_id");
+			int transitionType = intent.getIntExtra("transition_type", -1);
+			Cursor c = getContentResolver().query(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, 
+					null, 
+					"_id = ?", 
+					new String[]{id}, 
+					null);
+			SimpleGeofence g = null;
+			if(c.moveToFirst()){
+				g = new SimpleGeofence(
+						""+c.getLong(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData._ID)), 
+						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LATITUDE)), 
+						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE)), 
+						(float) c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.RADIUS)), 
+						100000000L, 
+						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DIRECTION)),
+						Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
+				g.setDescription(c.getString(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DESCRIPTION)));
+			}
+			mTriggeredGeofences.put(g, transitionType);
+			Toast.makeText(MainActivity.this, "Added geofence to hashmap", Toast.LENGTH_SHORT).show();
+			Log.d(TAG, mTriggeredGeofences.toString());
+//			NotificationCompat.Builder builder = 
+//            		new NotificationCompat.Builder(MainActivity.this);
+//            if(transitionType == Geofence.GEOFENCE_TRANSITION_ENTER && mOrientationManager.getHeading() == g.getDirection()){
+//            		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//            		.setContentTitle("Entered Geofence")
+//            		.setContentText("You have entered a geofence: " + g.toString())
+//            .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + g.toString()));
+////            		i.putExtra("loc", "Entered geofence: " + g.toString());
+////            		i.putExtra("id", g.getId());
+//            }
+//            else if (transitionType == Geofence.GEOFENCE_TRANSITION_DWELL) {
+//            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//        		.setContentTitle("Dwelling Geofence")
+//        		.setContentText("You dwelling in a geofence: " + g.toString())
+//            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + g.toString()));
+////            	i.putExtra("loc", "Dwelling in geofence: " + g.toString());
+////            	i.putExtra("id", triggerIds[0]);
+//            }
+//            else {
+//            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//        		.setContentTitle("Exited Geofence")
+//        		.setContentText("You dwelling in a geofence: " + g.toString())
+//            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + g.toString()));
+////            	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
+////            	i.putExtra("id", triggerIds[0]);
+//            }
+			new ConnectThread(mBluetoothAdapter, mConnectedDevice).execute(g);
 		}
 	};
 
@@ -180,7 +234,7 @@ public class MainActivity extends FragmentActivity implements
 		
 	    //mCurrentLocation = mLocationClient.getLastLocation();
 		getGeofenceList();
-		
+		mTriggeredGeofences = new HashMap<SimpleGeofence, Integer>();
 	    
 	    // Create the LocationRequest object
         mLocationRequest = LocationRequest.create();
@@ -203,6 +257,45 @@ public class MainActivity extends FragmentActivity implements
 				Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
 		        if(frag instanceof CompassFragment)
 		        	((CompassFragment)frag).setTextViewText("Your current heading: " + mOrientationManager.getHeading());
+		        Set<SimpleGeofence> gset = mTriggeredGeofences.keySet();
+		        for(SimpleGeofence g : gset){
+		        NotificationCompat.Builder builder = 
+	            		new NotificationCompat.Builder(MainActivity.this);
+		        int heading = (int)mOrientationManager.getHeading();
+		        int direction = (int)g.getDirection();
+		        Log.d(TAG, ""+heading + ", " + direction);
+	            if(mTriggeredGeofences.get(g) == Geofence.GEOFENCE_TRANSITION_ENTER && isWithinTenDegrees(heading, direction)){
+	            		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+	            		.setContentTitle("Entered Geofence")
+	            		.setContentText("You have entered a geofence: " + g.toString())
+	            .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + g.toString()));
+//	            		i.putExtra("loc", "Entered geofence: " + g.toString());
+//	            		i.putExtra("id", g.getId());
+	            		NotificationManager mNotificationManager =
+	                    	    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+	                    	
+	                    	// mId allows you to update the notification later on.
+	                    	mNotificationManager.notify(1, builder.build());
+	                    	mTriggeredGeofences.remove(g);
+	            }
+//	            else if (mTriggeredGeofences.get(g) == Geofence.GEOFENCE_TRANSITION_DWELL) {
+//	            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//	        		.setContentTitle("Dwelling Geofence")
+//	        		.setContentText("You dwelling in a geofence: " + g.toString())
+//	            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + g.toString()));
+////	            	i.putExtra("loc", "Dwelling in geofence: " + g.toString());
+////	            	i.putExtra("id", triggerIds[0]);
+//	            }
+//	            else {
+//	            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//	        		.setContentTitle("Exited Geofence")
+//	        		.setContentText("You dwelling in a geofence: " + g.toString())
+//	            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + g.toString()));
+////	            	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
+////	            	i.putExtra("id", triggerIds[0]);
+//	            }
+	            
+		        }
 			}
 			
 			@Override
@@ -241,6 +334,10 @@ public class MainActivity extends FragmentActivity implements
 		}
     	displayDialogList(list);
         
+	}
+	
+	public boolean isWithinTenDegrees(int one, int two){
+		return Math.abs(one - two) <= 10;
 	}
 	
 	public BluetoothAdapter getBTAdapter(){
@@ -460,6 +557,12 @@ public class MainActivity extends FragmentActivity implements
                         mCurrentGeofences, mTransitionPendingIntent, this);
             case CONNECT:
             	return;
+            case REMOVE_ALL:
+            	// Get the PendingIntent for the request
+                mTransitionPendingIntent =
+                        getTransitionPendingIntent();
+                // Send a request to remove the current geofences
+                mLocationClient.removeGeofences(mTransitionPendingIntent, this);
             }
 	}
 
@@ -632,39 +735,53 @@ public class MainActivity extends FragmentActivity implements
 			@Override
 			protected List<Geofence> doInBackground(Void... params) {
 				List<Geofence> result = new LinkedList<Geofence>();
-				HttpClient client = new DefaultHttpClient();
-                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
-                HttpResponse response;
+//				HttpClient client = new DefaultHttpClient();
+//                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+//                HttpResponse response;
+//
+//                try {
+//                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
+//                    String authorizationString = "Basic " + Base64.encodeToString(
+//    				        ("randy" + ":" + "greenday").getBytes(),
+//    				        Base64.NO_WRAP); 
+//                    
+//                    
+//                    post.addHeader("Authorization", authorizationString);
+//                    response = client.execute(post);
+//                    
+//                    
+//
+//                    /*Checking response */
+//                    if(response!=null){
+//                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+//                        String res = new DataInputStream(in).readLine();
+//                        JSONObject obj = new JSONObject(res);
+//                        JSONArray results = obj.getJSONArray("results");
+					mCurrentGeofences = new LinkedList<Geofence>();
+					Cursor c = getContentResolver().query(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, null, null, null, null);
+					//if(c.moveToFirst())
+					while(c.moveToNext()){
+						SimpleGeofence g = new SimpleGeofence(
+								""+c.getLong(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData._ID)), 
+								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LATITUDE)), 
+								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE)), 
+								(float) c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.RADIUS)), 
+								100000000L, 
+								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DIRECTION)),
+								Geofence.GEOFENCE_TRANSITION_ENTER);//|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
+                    	mCurrentGeofences.add(g.toGeofence());
+					}
+                        
+//                        for(int i = 1; i <= results.length(); i++){
+//                        	JSONObject j = results.getJSONObject(i-1);
+//                        	SimpleGeofence g = new SimpleGeofence(j.getString("url"), j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
+//                        	mCurrentGeofences.add(g.toGeofence());
+                      //  }
+                   // }
 
-                try {
-                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
-                    String authorizationString = "Basic " + Base64.encodeToString(
-    				        ("randy" + ":" + "greenday").getBytes(),
-    				        Base64.NO_WRAP); 
-                    
-                    
-                    post.addHeader("Authorization", authorizationString);
-                    response = client.execute(post);
-                    
-                    
-
-                    /*Checking response */
-                    if(response!=null){
-                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
-                        String res = new DataInputStream(in).readLine();
-                        JSONObject obj = new JSONObject(res);
-                        JSONArray results = obj.getJSONArray("results");
-                        mCurrentGeofences = new LinkedList<Geofence>();
-                        for(int i = 1; i <= results.length(); i++){
-                        	JSONObject j = results.getJSONObject(i-1);
-                        	SimpleGeofence g = new SimpleGeofence(j.getString("url"), j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
-                        	mCurrentGeofences.add(g.toGeofence());
-                        }
-                    }
-
-                } catch(Exception e) {
-                    e.printStackTrace();
-                }
+//                } catch(Exception e) {
+//                    e.printStackTrace();
+//                }
                 if(!mCurrentGeofences.isEmpty())
                 	addGeofences();
                 else {
@@ -677,8 +794,45 @@ public class MainActivity extends FragmentActivity implements
 			}
     		
     	}.execute();
-    	
-    	
+    }
+    
+    /**
+     * Start a request for geofence monitoring by calling
+     * LocationClient.connect().
+     */
+    public void removeGeofences() {
+        // Start a request to add geofences
+        mRequestType = REQUEST_TYPE.REMOVE_ALL;
+        /*
+         * Test for Google Play services after setting the request type.
+         * If Google Play services isn't present, the proper request
+         * can be restarted.
+         */
+        if (!servicesConnected()) {
+            return;
+        }
+        /*
+         * Create a new location client object. Since the current
+         * activity class implements ConnectionCallbacks and
+         * OnConnectionFailedListener, pass the current activity object
+         * as the listener for both parameters
+         */
+        mLocationClient = new LocationClient(this, this, this);
+        // If a request is not already underway
+        if (!mInProgress) {
+            // Indicate that a request is underway
+            mInProgress = true;
+            // Request a connection from the client to Location Services
+            mLocationClient.connect();
+        } else {
+            /*
+             * A request is already underway. You can handle
+             * this situation by disconnecting the client,
+             * re-setting the flag, and then re-trying the
+             * request.
+             */
+        }
+        getContentResolver().delete(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, null, null);
     }
 
 	@Override

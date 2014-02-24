@@ -26,9 +26,13 @@ import org.apache.http.protocol.HTTP;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import twilight.of.the.devs.provider.TouryProvider;
+import twilight.of.the.devs.provider.TouryProvider.TouryProviderMetaData;
 import twilight.of.the.devs.toury.MainActivity;
 import twilight.of.the.devs.toury.R;
 import twilight.of.the.devs.utils.OrientationManager;
+import android.content.ContentValues;
+import android.database.Cursor;
 import android.location.Location;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -44,10 +48,6 @@ import android.widget.TextView;
 
 public class LocationFragment extends Fragment {
 
-	/**
-	 * The fragment argument representing the section number for this
-	 * fragment.
-	 */
 	public static final String ARG_SECTION_NUMBER = "section_number";
 	private final String TAG = LocationFragment.class.getName();
 	private TextView mTextView, geofenceText;
@@ -63,8 +63,9 @@ public class LocationFragment extends Fragment {
 		View rootView = inflater.inflate(R.layout.fragment,
 				container, false);
 		mTextView = (TextView) rootView
-				.findViewById(R.id.section_label);
-		mTextView.setText("Your current location: ");
+				.findViewById(R.id.current_location);
+		TextView title = (TextView)rootView.findViewById(R.id.fragment_title);
+		title.setText("Current Location:");
 		geofenceText = (TextView)rootView.findViewById(R.id.geofence);
 		mButton = (Button)rootView.findViewById(R.id.button1);
 		Button geofence = (Button)rootView.findViewById(R.id.geofenceBtn);
@@ -82,6 +83,14 @@ public class LocationFragment extends Fragment {
 				submitLocation();
 			}
 		});
+		Button remove = (Button)rootView.findViewById(R.id.remove_btn);
+		remove.setOnClickListener(new OnClickListener() {
+			
+			@Override
+			public void onClick(View arg0) {
+				((MainActivity)getActivity()).removeGeofences();
+			}
+		});
 		return rootView;
 	}
 	
@@ -90,33 +99,44 @@ public class LocationFragment extends Fragment {
 
 			@Override
 			protected String doInBackground(Void... params) {
-				HttpClient client = new DefaultHttpClient();
-                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
-                HttpResponse response;
-
-                try {
-                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
-                    String authorizationString = "Basic " + Base64.encodeToString(
-    				        ("randy" + ":" + "greenday").getBytes(),
-    				        Base64.NO_WRAP); 
-                    
-                    post.addHeader("Authorization", authorizationString);
-                    response = client.execute(post);
-                    
-                    
-
-                    /*Checking response */
-                    if(response!=null){
-                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
-                        String res = new DataInputStream(in).readLine();
-                        JSONObject obj = new JSONObject(res);
-                        return obj.toString();
-                    }
-
-                } catch(Exception e) {
-                    e.printStackTrace();
-                }
-				return null;
+//				HttpClient client = new DefaultHttpClient();
+//                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+//                HttpResponse response;
+//
+//                try {
+//                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
+//                    String authorizationString = "Basic " + Base64.encodeToString(
+//    				        ("randy" + ":" + "greenday").getBytes(),
+//    				        Base64.NO_WRAP); 
+//                    
+//                    post.addHeader("Authorization", authorizationString);
+//                    response = client.execute(post);
+//                    
+//                    
+//
+//                    /*Checking response */
+//                    if(response!=null){
+//                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+//                        String res = new DataInputStream(in).readLine();
+//                        JSONObject obj = new JSONObject(res);
+//                        return obj.toString();
+//                    }
+//
+//                } catch(Exception e) {
+//                    e.printStackTrace();
+//                }
+				Cursor c = getActivity().getContentResolver().query(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, 
+						null, 
+						null, 
+						null, 
+						TouryProviderMetaData.MarkersTableMetaData.DEFAULT_SORT_ORDER);
+				StringBuilder sb = new StringBuilder();
+				//if(c.moveToFirst())
+					while(c.moveToNext()){
+						sb.append(c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LATITUDE)) + " ");
+						sb.append(c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE)) + "\n");
+					}
+				return sb.toString();
 			}
 			
 			@Override
@@ -138,38 +158,49 @@ public class LocationFragment extends Fragment {
 		new Thread(new Runnable(){
 			public void run(){
 
-				HttpClient client = new DefaultHttpClient();
-                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
-                HttpResponse response;
+//				HttpClient client = new DefaultHttpClient();
+//                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+//                HttpResponse response;
                 OrientationManager om = ((MainActivity)getActivity()).getOM();
-
-                try {
-                    HttpPost post = new HttpPost("http://valis.strangled.net:9000/api/tours/");
-                    String authorizationString = "Basic " + Base64.encodeToString(
-    				        ("randy" + ":" + "greenday").getBytes(),
-    				        Base64.NO_WRAP); 
-                    JSONObject jsonParam = new JSONObject();
-    				jsonParam.put("title", "Post from Android");
-    				jsonParam.put("description", "This is a description from Toury for Android");
-    				jsonParam.put("latitude",mLocation.getLatitude());
-    				jsonParam.put("longitude",mLocation.getLongitude());
-    				jsonParam.put("radius", 5);
-    				jsonParam.put("direction", om.getHeading());
-                    StringEntity se = new StringEntity( jsonParam.toString());  
-                    se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
-                    post.addHeader("Authorization", authorizationString);
-                    post.setEntity(se);
-                    response = client.execute(post);
-
-                    /*Checking response */
-                    if(response!=null){
-                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
-                    }
-
-                } catch(Exception e) {
-                    e.printStackTrace();
-                }
+//
+//                try {
+//                    HttpPost post = new HttpPost("http://valis.strangled.net:9000/api/tours/");
+//                    String authorizationString = "Basic " + Base64.encodeToString(
+//    				        ("randy" + ":" + "greenday").getBytes(),
+//    				        Base64.NO_WRAP); 
+//                    JSONObject jsonParam = new JSONObject();
+//    				jsonParam.put("title", "Post from Android");
+//    				jsonParam.put("description", "This is a description from Toury for Android");
+//    				jsonParam.put("latitude",mLocation.getLatitude());
+//    				jsonParam.put("longitude",mLocation.getLongitude());
+//    				jsonParam.put("radius", 5);
+//    				jsonParam.put("direction", om.getHeading());
+//                    StringEntity se = new StringEntity( jsonParam.toString());  
+//                    se.setContentType(new BasicHeader(HTTP.CONTENT_TYPE, "application/json"));
+//                    post.addHeader("Authorization", authorizationString);
+//                    post.setEntity(se);
+//                    response = client.execute(post);
+//
+//                    /*Checking response */
+//                    if(response!=null){
+//                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+//                    }
+//
+//                } catch(Exception e) {
+//                    e.printStackTrace();
+//                }
+				ContentValues values = new ContentValues();
+				values.put(TouryProviderMetaData.MarkersTableMetaData.TITLE, "Title");
+				values.put(TouryProviderMetaData.MarkersTableMetaData.DESCRIPTION, "A description from Toury Android");
+				values.put(TouryProviderMetaData.MarkersTableMetaData.LATITUDE, mLocation.getLatitude());
+				values.put(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE, mLocation.getLongitude());
+				values.put(TouryProviderMetaData.MarkersTableMetaData.RADIUS, 15.0);
+				values.put(TouryProviderMetaData.MarkersTableMetaData.DIRECTION, om.getHeading());
+				getActivity().getContentResolver().insert(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, values);
 			}
+			
 		}).start();
 	}
+	
+	
 }

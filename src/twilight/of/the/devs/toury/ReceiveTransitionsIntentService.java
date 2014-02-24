@@ -69,38 +69,40 @@ public class ReceiveTransitionsIntentService extends IntentService {
                  * them.
                  */
                 Intent i = new Intent("location");
-                NotificationCompat.Builder builder = 
-                		new NotificationCompat.Builder(this);
-                if(transitionType == Geofence.GEOFENCE_TRANSITION_ENTER){
-                		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-                		.setContentTitle("Entered Geofence")
-                		.setContentText("You have entered a geofence: " + triggerList.toString())
-                .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + triggerList.toString()));
-                		i.putExtra("loc", "Entered geofence: " + triggerList.get(0).toString());
-                		i.putExtra("id", triggerIds[0]);
-                }
-                else if (transitionType == Geofence.GEOFENCE_TRANSITION_DWELL) {
-                	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-            		.setContentTitle("Dwelling Geofence")
-            		.setContentText("You dwelling in a geofence: " + triggerList.toString())
-                	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + triggerList.toString()));
-                	i.putExtra("loc", "Dwelling in geofence: " + triggerList.get(0).toString());
-                	i.putExtra("id", triggerIds[0]);
-                }
-                else {
-                	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-            		.setContentTitle("Exited Geofence")
-            		.setContentText("You dwelling in a geofence: " + triggerList.toString())
-                	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + triggerList.toString()));
-                	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
-                	i.putExtra("id", triggerIds[0]);
-                }
+                i.putExtra("geofence_id", triggerList.get(0).getRequestId());
+                i.putExtra("transition_type", transitionType);
+//                NotificationCompat.Builder builder = 
+//                		new NotificationCompat.Builder(this);
+//                if(transitionType == Geofence.GEOFENCE_TRANSITION_ENTER){
+//                		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//                		.setContentTitle("Entered Geofence")
+//                		.setContentText("You have entered a geofence: " + triggerList.toString())
+//                .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + triggerList.toString()));
+//                		i.putExtra("loc", "Entered geofence: " + triggerList.get(0).toString());
+//                		i.putExtra("id", triggerIds[0]);
+//                }
+//                else if (transitionType == Geofence.GEOFENCE_TRANSITION_DWELL) {
+//                	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//            		.setContentTitle("Dwelling Geofence")
+//            		.setContentText("You dwelling in a geofence: " + triggerList.toString())
+//                	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + triggerList.toString()));
+//                	i.putExtra("loc", "Dwelling in geofence: " + triggerList.get(0).toString());
+//                	i.putExtra("id", triggerIds[0]);
+//                }
+//                else {
+//                	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
+//            		.setContentTitle("Exited Geofence")
+//            		.setContentText("You dwelling in a geofence: " + triggerList.toString())
+//                	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + triggerList.toString()));
+//                	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
+//                	i.putExtra("id", triggerIds[0]);
+//                }
                 LocalBroadcastManager.getInstance(this).sendBroadcast(i);
-                NotificationManager mNotificationManager =
-                	    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                	
-                	// mId allows you to update the notification later on.
-                	mNotificationManager.notify(1, builder.build());
+//                NotificationManager mNotificationManager =
+//                	    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+//                	
+//                	// mId allows you to update the notification later on.
+//                	mNotificationManager.notify(1, builder.build());
                 	
 //                if(transitionType == Geofence.GEOFENCE_TRANSITION_ENTER)
 //                	Toast.makeText(this, "Entered: " + triggerList.toString(), Toast.LENGTH_SHORT).show();

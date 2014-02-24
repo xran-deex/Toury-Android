@@ -6,13 +6,15 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.UUID;
 
+import twilight.of.the.devs.mylibrary.SimpleGeofence;
+
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.os.AsyncTask;
 import android.util.Log;
 
-public class ConnectThread extends AsyncTask<String, Integer, Void> {
+public class ConnectThread extends AsyncTask<SimpleGeofence, Integer, Void> {
 
 	private static final String TAG = ConnectThread.class.getName();
 	private BluetoothAdapter mBluetoothAdapter;
@@ -25,7 +27,7 @@ public class ConnectThread extends AsyncTask<String, Integer, Void> {
 	}
 	
 	@Override
-	protected Void doInBackground(String... command) {
+	protected Void doInBackground(SimpleGeofence... command) {
 
 		UUID MY_UUID = UUID.fromString("2166f331-7ff9-4f32-802a-77cf52af027e");
 		// Get a BluetoothSocket to connect with the given BluetoothDevice
