@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <PreferenceCategory 
+        android:title="Settings"
+        android:key="pref_key_settings">
+        <CheckBoxPreference
+            android:key="@string/pref_key_web_service"
+            android:summary="Tours Location"
+            android:title="Load Tours from Web Service"
+            android:defaultValue="false" />
+        
+    </PreferenceCategory>
+</PreferenceScreen>

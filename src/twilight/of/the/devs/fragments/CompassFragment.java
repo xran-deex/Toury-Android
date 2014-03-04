@@ -24,7 +24,7 @@ public class CompassFragment extends Fragment {
 	@Override
 	public View onCreateView(LayoutInflater inflater, ViewGroup container,
 			Bundle savedInstanceState) {
-		View rootView = inflater.inflate(R.layout.fragment,
+		View rootView = inflater.inflate(R.layout.debug_fragment,
 				container, false);
 		mTextView = (TextView) rootView
 				.findViewById(R.id.current_location);
@@ -32,7 +32,7 @@ public class CompassFragment extends Fragment {
 		title.setText("Current Location:");
 		Button btn = (Button)rootView.findViewById(R.id.geofenceBtn);
 		btn.setVisibility(View.INVISIBLE);
-		Button btn2 = (Button)rootView.findViewById(R.id.button1);
+		Button btn2 = (Button)rootView.findViewById(R.id.createMarkerBtn);
 		btn2.setVisibility(View.INVISIBLE);
 		return rootView;
 	}

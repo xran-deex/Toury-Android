@@ -40,6 +40,9 @@ import java.util.concurrent.TimeUnit;
  * Collects and communicates information about the user's current orientation and location.
  */
 public class OrientationManager {
+	
+	private static final long ONE_SECOND = 1000000000L;
+	private static final long HALF_SECOND = 500000000L;
 
     /**
      * The minimum distance desired between location notifications.
@@ -143,11 +146,11 @@ public class OrientationManager {
                 mHeading = MathUtils.mod(computeTrueNorth(magneticHeading), 360.0f)
                         - ARM_DISPLACEMENT_DEGREES;
                 long time = event.timestamp;
-                if(time - mTimeSinceLastSensor > 20500000L){
+                if((time - mTimeSinceLastSensor) > ONE_SECOND){
                 	notifyOrientationChanged();
-                	//Log.d(TAG, ""+mTimeSinceLastSensor);
+                	mTimeSinceLastSensor = time;
                 }
-                mTimeSinceLastSensor = time;
+                
             }
         }
     };

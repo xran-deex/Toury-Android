@@ -19,8 +19,13 @@ import org.json.JSONObject;
 
 import twilight.of.the.devs.fragments.CompassFragment;
 import twilight.of.the.devs.fragments.LocationFragment;
+import twilight.of.the.devs.fragments.SettingsFragment;
+import twilight.of.the.devs.fragments.WelcomeFragment;
+import twilight.of.the.devs.mylibrary.Marker;
 import twilight.of.the.devs.mylibrary.SimpleGeofence;
 import twilight.of.the.devs.provider.TouryProvider.TouryProviderMetaData;
+import twilight.of.the.devs.provider.TouryProvider.TouryProviderMetaData.MarkersTableMetaData;
+import twilight.of.the.devs.utils.OrientationListener;
 import twilight.of.the.devs.utils.OrientationManager;
 import twilight.of.the.devs.utils.OrientationManager.OnChangedListener;
 
@@ -57,8 +62,10 @@ import android.database.Cursor;
 import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentActivity;
@@ -143,11 +150,14 @@ public class MainActivity extends FragmentActivity implements
     private REQUEST_TYPE mRequestType;
     // Flag that indicates if a request is underway.
     private boolean mInProgress;
-	private List<Geofence> mCurrentGeofences;
+	private List<Marker> mCurrentMarkers;
 	private BluetoothAdapter mBluetoothAdapter;
 	private HashMap<String, BluetoothDevice> devices;
 	private BluetoothDevice mConnectedDevice;
-	private HashMap<SimpleGeofence, Integer> mTriggeredGeofences;
+	private HashMap<Marker, Integer> mTriggeredMarkers;
+	protected List<Geofence> mGeofences;
+	private String bluetoothAddress;
+	private boolean loadFromREST;
 	
 	private BroadcastReceiver mReceiver = new BroadcastReceiver() {
 		
@@ -155,55 +165,29 @@ public class MainActivity extends FragmentActivity implements
 		public void onReceive(Context context, Intent intent) {
 			String id = intent.getStringExtra("geofence_id");
 			int transitionType = intent.getIntExtra("transition_type", -1);
-			Cursor c = getContentResolver().query(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, 
-					null, 
-					"_id = ?", 
-					new String[]{id}, 
-					null);
-			SimpleGeofence g = null;
-			if(c.moveToFirst()){
-				g = new SimpleGeofence(
-						""+c.getLong(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData._ID)), 
-						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LATITUDE)), 
-						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE)), 
-						(float) c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.RADIUS)), 
-						100000000L, 
-						c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DIRECTION)),
-						Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
-				g.setDescription(c.getString(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DESCRIPTION)));
+
+			Log.d(TAG, "Geofence was triggered");
+			Log.d(TAG, "Current markers: " + mCurrentMarkers.toString());
+			Log.d(TAG, "Triggered id: " + id);
+			
+			Marker triggeredMarker = null;
+			for(Marker marker : mCurrentMarkers){
+				Log.d(TAG, "Marker: " + marker);
+				if(marker.getId() == Integer.parseInt(id))
+					triggeredMarker = marker;
 			}
-			mTriggeredGeofences.put(g, transitionType);
+
+			mTriggeredMarkers.put(triggeredMarker, transitionType);
 			Toast.makeText(MainActivity.this, "Added geofence to hashmap", Toast.LENGTH_SHORT).show();
-			Log.d(TAG, mTriggeredGeofences.toString());
-//			NotificationCompat.Builder builder = 
-//            		new NotificationCompat.Builder(MainActivity.this);
-//            if(transitionType == Geofence.GEOFENCE_TRANSITION_ENTER && mOrientationManager.getHeading() == g.getDirection()){
-//            		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-//            		.setContentTitle("Entered Geofence")
-//            		.setContentText("You have entered a geofence: " + g.toString())
-//            .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + g.toString()));
-////            		i.putExtra("loc", "Entered geofence: " + g.toString());
-////            		i.putExtra("id", g.getId());
-//            }
-//            else if (transitionType == Geofence.GEOFENCE_TRANSITION_DWELL) {
-//            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-//        		.setContentTitle("Dwelling Geofence")
-//        		.setContentText("You dwelling in a geofence: " + g.toString())
-//            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + g.toString()));
-////            	i.putExtra("loc", "Dwelling in geofence: " + g.toString());
-////            	i.putExtra("id", triggerIds[0]);
-//            }
-//            else {
-//            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-//        		.setContentTitle("Exited Geofence")
-//        		.setContentText("You dwelling in a geofence: " + g.toString())
-//            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + g.toString()));
-////            	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
-////            	i.putExtra("id", triggerIds[0]);
-//            }
-			new ConnectThread(mBluetoothAdapter, mConnectedDevice).execute(g);
+			Log.d(TAG, mTriggeredMarkers.toString());
+			LinkedList<Marker> list = new LinkedList<Marker>();
+			list.add(triggeredMarker);
+
+			if(mConnectedDevice != null)
+				new ConnectThread(mBluetoothAdapter, mConnectedDevice, true).execute(list);
 		}
 	};
+	
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -223,18 +207,30 @@ public class MainActivity extends FragmentActivity implements
 		mViewPager.setAdapter(mSectionsPagerAdapter);
 		
 		// Open the shared preferences
-        mPrefs = getSharedPreferences("SharedPreferences",
-                Context.MODE_PRIVATE);
+		mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
         // Get a SharedPreferences editor
         mEditor = mPrefs.edit();
+        Log.d(TAG, getResources().getString(R.string.pref_key_web_service));
+        loadFromREST = mPrefs.getBoolean(getResources().getString(R.string.pref_key_web_service), false);
+        Log.d(TAG, "Load from REST: " + loadFromREST);
+		bluetoothAddress = mPrefs.getString("bluetooth_device", null);
+		mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+		if (mBluetoothAdapter == null) {
+		    Toast.makeText(this, "Bluetooth not available", Toast.LENGTH_SHORT).show();
+		    finish();
+		}
 		
-		//mLocationClient = new LocationClient(this, this, this);
+		if(bluetoothAddress == null) {
+			showSelectBluetoothDialog();
+		} else {
+			mConnectedDevice = getBluetoothDevice();
+		}
 		
 		mUpdatesRequested = true;
-		
-	    //mCurrentLocation = mLocationClient.getLastLocation();
-		getGeofenceList();
-		mTriggeredGeofences = new HashMap<SimpleGeofence, Integer>();
+
+		mCurrentMarkers = new LinkedList<Marker>();
+		mGeofences = new LinkedList<Geofence>();
+		mTriggeredMarkers = new HashMap<Marker, Integer>();
 	    
 	    // Create the LocationRequest object
         mLocationRequest = LocationRequest.create();
@@ -250,67 +246,13 @@ public class MainActivity extends FragmentActivity implements
         LocationManager locationManager =
                 (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         mOrientationManager = new OrientationManager(sensorManager, locationManager);
-        mOrientationManager.addOnChangedListener(new OnChangedListener() {
-			
-			@Override
-			public void onOrientationChanged(OrientationManager orientationManager) {
-				Fragment frag = ((SectionsPagerAdapter)mViewPager.getAdapter()).getItem(mViewPager.getCurrentItem());
-		        if(frag instanceof CompassFragment)
-		        	((CompassFragment)frag).setTextViewText("Your current heading: " + mOrientationManager.getHeading());
-		        Set<SimpleGeofence> gset = mTriggeredGeofences.keySet();
-		        for(SimpleGeofence g : gset){
-		        NotificationCompat.Builder builder = 
-	            		new NotificationCompat.Builder(MainActivity.this);
-		        int heading = (int)mOrientationManager.getHeading();
-		        int direction = (int)g.getDirection();
-		        Log.d(TAG, ""+heading + ", " + direction);
-	            if(mTriggeredGeofences.get(g) == Geofence.GEOFENCE_TRANSITION_ENTER && isWithinTenDegrees(heading, direction)){
-	            		builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-	            		.setContentTitle("Entered Geofence")
-	            		.setContentText("You have entered a geofence: " + g.toString())
-	            .setStyle(new NotificationCompat.BigTextStyle().bigText("You have entered a geofence: " + g.toString()));
-//	            		i.putExtra("loc", "Entered geofence: " + g.toString());
-//	            		i.putExtra("id", g.getId());
-	            		NotificationManager mNotificationManager =
-	                    	    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-	                    	
-	                    	// mId allows you to update the notification later on.
-	                    	mNotificationManager.notify(1, builder.build());
-	                    	mTriggeredGeofences.remove(g);
-	            }
-//	            else if (mTriggeredGeofences.get(g) == Geofence.GEOFENCE_TRANSITION_DWELL) {
-//	            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-//	        		.setContentTitle("Dwelling Geofence")
-//	        		.setContentText("You dwelling in a geofence: " + g.toString())
-//	            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You dwelling in a geofence: " + g.toString()));
-////	            	i.putExtra("loc", "Dwelling in geofence: " + g.toString());
-////	            	i.putExtra("id", triggerIds[0]);
-//	            }
-//	            else {
-//	            	builder.setSmallIcon(android.R.drawable.ic_menu_mapmode)
-//	        		.setContentTitle("Exited Geofence")
-//	        		.setContentText("You dwelling in a geofence: " + g.toString())
-//	            	.setStyle(new NotificationCompat.BigTextStyle().bigText("You have exited a geofence: " + g.toString()));
-////	            	i.putExtra("loc", "Exited geofence: " + triggerList.get(0).toString());
-////	            	i.putExtra("id", triggerIds[0]);
-//	            }
-	            
-		        }
-			}
-			
-			@Override
-			public void onLocationChanged(OrientationManager orientationManager) {
-			}
-			
-			@Override
-			public void onAccuracyChanged(OrientationManager orientationManager) {
-			}
-		});
-        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-		if (mBluetoothAdapter == null) {
-		    Toast.makeText(this, "Bluetooth not available", Toast.LENGTH_SHORT).show();
-		    finish();
-		}
+        
+        mOrientationManager.addOnChangedListener(new OrientationListener(this));
+        
+	} // end onCreate()
+	
+	public void showSelectBluetoothDialog() {
+		
         Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
         devices = new HashMap<String, BluetoothDevice>();
     	// If there are paired devices
@@ -333,11 +275,16 @@ public class MainActivity extends FragmentActivity implements
 			i++;
 		}
     	displayDialogList(list);
-        
 	}
 	
-	public boolean isWithinTenDegrees(int one, int two){
-		return Math.abs(one - two) <= 10;
+	public BluetoothDevice getBluetoothDevice(){
+		Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+		for (BluetoothDevice device : pairedDevices) {
+	        // Add the name and address to an array adapter to show in a ListView
+	        if(device.getAddress().equals(bluetoothAddress))
+	        	return device;
+	    }
+		return null;
 	}
 	
 	public BluetoothAdapter getBTAdapter(){
@@ -355,6 +302,7 @@ public class MainActivity extends FragmentActivity implements
 	           .setItems(list, new DialogInterface.OnClickListener() {
 	               public void onClick(DialogInterface dialog, int which) {
 		               mConnectedDevice = devices.get(list[which]);
+		               mEditor.putString("bluetooth_device", mConnectedDevice.getAddress());
 	           }
 	    }).setOnCancelListener(new OnCancelListener() {
 			
@@ -373,6 +321,41 @@ public class MainActivity extends FragmentActivity implements
 		return true;
 	}
 	
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		switch(item.getItemId()){
+		case R.id.action_settings:
+			Intent i = new Intent(this, SettingsActivity.class);
+			startActivity(i);
+			return true;
+		case R.id.sync:
+			Intent i2 = new Intent(this, SyncService.class);
+			startService(i2);
+			return true;
+		}
+		return super.onOptionsItemSelected(item);
+	}
+	
+	public boolean getLoadFromREST(){
+		return loadFromREST;
+	}
+	
+	public List<Marker> getCurrentMarkers() {
+		return mCurrentMarkers;
+	}
+
+	public HashMap<Marker, Integer> getTriggeredMarkers() {
+		return mTriggeredMarkers;
+	}
+
+	public List<Geofence> getGeofences() {
+		return mGeofences;
+	}
+	
+	public ViewPager getViewPager(){
+		return mViewPager;
+	}
+
 	/*
      * Handle results returned to the FragmentActivity
      * by Google Play services
@@ -443,6 +426,7 @@ public class MainActivity extends FragmentActivity implements
 		private final String TAG = SectionsPagerAdapter.class.getName();
 		private LocationFragment locFrag;
 		private CompassFragment compassFrag;
+		private WelcomeFragment welcomeFrag;
 
 		public SectionsPagerAdapter(FragmentManager fm) {
 			super(fm);
@@ -451,22 +435,27 @@ public class MainActivity extends FragmentActivity implements
 		@Override
 		public Fragment getItem(int position) {
 			Fragment fragment = null;
-			if(position == 0){
+			if (position == 0){
+				if(welcomeFrag != null)
+					fragment = welcomeFrag;
+				else {
+					welcomeFrag = new WelcomeFragment();
+					fragment = welcomeFrag;
+				}
+			} else if(position == 1){
 				if(locFrag != null)
 					fragment = locFrag;
 				else {
 					locFrag = new LocationFragment();
 					fragment = locFrag;
 				}
-				//mOrientationManager.stop();
-			} else {
+			} else if (position == 2){
 				if(compassFrag != null){
 					fragment = compassFrag;
 				} else {
 					compassFrag = new CompassFragment();
 					fragment = compassFrag;
 				}
-				//mOrientationManager.start();
 			}
 			return fragment;
 		}
@@ -481,15 +470,15 @@ public class MainActivity extends FragmentActivity implements
 			Locale l = Locale.getDefault();
 			switch (position) {
 			case 0:
-				return getString(R.string.frag1).toUpperCase(l);
+				return "Toury".toUpperCase(l);
 			case 1:
-				return getString(R.string.frag2).toUpperCase(l);
+				return "Debug".toUpperCase(l);
 			}
 			return null;
 		}
 	}
 	
-	public OrientationManager getOM(){
+	public OrientationManager getOrientationManager(){
 		return mOrientationManager;
 	}
 	
@@ -552,9 +541,9 @@ public class MainActivity extends FragmentActivity implements
                 mTransitionPendingIntent =
                         getTransitionPendingIntent();
                 // Send a request to add the current geofences
-//                mLocationClient.removeGeofences(mTransitionPendingIntent, this);
                 mLocationClient.addGeofences(
-                        mCurrentGeofences, mTransitionPendingIntent, this);
+                        mGeofences, mTransitionPendingIntent, this);
+                break;
             case CONNECT:
             	return;
             case REMOVE_ALL:
@@ -563,6 +552,7 @@ public class MainActivity extends FragmentActivity implements
                         getTransitionPendingIntent();
                 // Send a request to remove the current geofences
                 mLocationClient.removeGeofences(mTransitionPendingIntent, this);
+                break;
             }
 	}
 
@@ -592,6 +582,7 @@ public class MainActivity extends FragmentActivity implements
      */
     @Override
     protected void onStop() {
+    	if(mLocationClient != null){
     	// If the client is connected
         if (mLocationClient.isConnected()) {
             /*
@@ -603,6 +594,7 @@ public class MainActivity extends FragmentActivity implements
         	mUpdatesRequested = false;
         }
         mLocationClient.disconnect();
+    	}
         super.onStop();
     }
     
@@ -727,63 +719,87 @@ public class MainActivity extends FragmentActivity implements
         }
     }
     
-    public void getGeofenceList(){
-    	List<Geofence> result = new LinkedList<Geofence>();
+    public void loadTour(final int tourId){
     	
+    	LocationFragment.tour_id = tourId;
     	new AsyncTask<Void, Void, List<Geofence>>(){
 
 			@Override
 			protected List<Geofence> doInBackground(Void... params) {
-				List<Geofence> result = new LinkedList<Geofence>();
-//				HttpClient client = new DefaultHttpClient();
-//                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
-//                HttpResponse response;
-//
-//                try {
-//                    HttpGet post = new HttpGet("http://valis.strangled.net:9000/api/tours/");
-//                    String authorizationString = "Basic " + Base64.encodeToString(
-//    				        ("randy" + ":" + "greenday").getBytes(),
-//    				        Base64.NO_WRAP); 
-//                    
-//                    
-//                    post.addHeader("Authorization", authorizationString);
-//                    response = client.execute(post);
-//                    
-//                    
-//
-//                    /*Checking response */
-//                    if(response!=null){
-//                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
-//                        String res = new DataInputStream(in).readLine();
-//                        JSONObject obj = new JSONObject(res);
-//                        JSONArray results = obj.getJSONArray("results");
-					mCurrentGeofences = new LinkedList<Geofence>();
-					Cursor c = getContentResolver().query(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, null, null, null, null);
-					//if(c.moveToFirst())
-					while(c.moveToNext()){
-						SimpleGeofence g = new SimpleGeofence(
-								""+c.getLong(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData._ID)), 
-								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LATITUDE)), 
-								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.LONGITUDE)), 
-								(float) c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.RADIUS)), 
-								100000000L, 
-								c.getDouble(c.getColumnIndex(TouryProviderMetaData.MarkersTableMetaData.DIRECTION)),
-								Geofence.GEOFENCE_TRANSITION_ENTER);//|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
-                    	mCurrentGeofences.add(g.toGeofence());
-					}
-                        
-//                        for(int i = 1; i <= results.length(); i++){
-//                        	JSONObject j = results.getJSONObject(i-1);
-//                        	SimpleGeofence g = new SimpleGeofence(j.getString("url"), j.getDouble("latitude"), j.getDouble("longitude"), (float) j.getDouble("radius"), 100000000L, Geofence.GEOFENCE_TRANSITION_ENTER|Geofence.GEOFENCE_TRANSITION_EXIT|Geofence.GEOFENCE_TRANSITION_DWELL);
-//                        	mCurrentGeofences.add(g.toGeofence());
-                      //  }
-                   // }
+				
+				if(loadFromREST){
+					HttpClient client = new DefaultHttpClient();
+	                HttpConnectionParams.setConnectionTimeout(client.getParams(), 10000); //Timeout Limit
+	                HttpResponse response;
+	
+	                try {
+	                    HttpGet post = new HttpGet("http://valis.strangled.net:7000/api/markers/");
+	                    String authorizationString = "Basic " + Base64.encodeToString(
+	    				        ("randy" + ":" + "greenday").getBytes(),
+	    				        Base64.NO_WRAP); 
+	                    
+	                    
+	                    post.addHeader("Authorization", authorizationString);
+	                    response = client.execute(post);
+	                   
+	                    
+	
+	                    /*Checking response */
+	                    if(response!=null){
+	                        InputStream in = response.getEntity().getContent(); //Get the data in the entity
+	                        String res = new DataInputStream(in).readLine();
+	                        Log.d(TAG, res);
+	                        JSONObject obj = new JSONObject(res);
+	                        JSONArray results = obj.getJSONArray("results");
+	                    
+		                    for(int i = 1; i <= results.length(); i++){
+		                    	JSONObject j = results.getJSONObject(i-1);
+		                    	Marker g = new Marker();
+		                    	g.setId(j.getInt("id"));
+		                    	g.setDirection(j.getDouble("direction"));
+		                    	g.setDescription(j.getString("description"));
+		                    	g.setTriggerLatitude(j.getDouble("trigger_latitude"));
+		                    	g.setTriggerLongitude(j.getDouble("trigger_longitude"));
+		                    	g.setMarkerLatitude(j.getDouble("marker_latitude"));
+		                    	g.setMarkerLongitude(j.getDouble("marker_longitude"));
+		                    	g.setRadius(j.getDouble("radius"));
+		                    	g.setTitle(j.getString("title"));
+		                    	g.setTourId(j.getInt("tour"));
+		                    	mGeofences.add(g.toGeofence());
+		                    	mCurrentMarkers.add(g);
+		                    }
+	                    }
+	                } catch(Exception e) {
+	                  e.printStackTrace();
+	                }
+				} else {
+				
+					
+					mGeofences = new LinkedList<Geofence>();
+					mCurrentMarkers = new LinkedList<Marker>();
+					Uri uri = Uri.withAppendedPath(TouryProviderMetaData.ToursTableMetaData.CONTENT_URI, "tour/" + tourId + "/markers");
+					Cursor c = getContentResolver().query(uri, null, null, null, null);
 
-//                } catch(Exception e) {
-//                    e.printStackTrace();
-//                }
-                if(!mCurrentGeofences.isEmpty())
+					while(c.moveToNext()){
+						Marker g = new Marker();
+								g.setId((int)c.getLong(c.getColumnIndex(MarkersTableMetaData._ID)));
+								g.setTriggerLatitude(c.getDouble(c.getColumnIndex(MarkersTableMetaData.TRIGGER_LATITUDE)));
+								g.setTriggerLongitude(c.getDouble(c.getColumnIndex(MarkersTableMetaData.TRIGGER_LONGITUDE)));
+								g.setMarkerLatitude(c.getDouble(c.getColumnIndex(MarkersTableMetaData.MARKER_LATITUDE)));
+								g.setMarkerLongitude(c.getDouble(c.getColumnIndex(MarkersTableMetaData.MARKER_LONGITUDE)));
+								g.setRadius(c.getDouble(c.getColumnIndex(MarkersTableMetaData.RADIUS)));
+								g.setDescription(c.getString(c.getColumnIndex(MarkersTableMetaData.DESCRIPTION)));
+								g.setDirection(c.getDouble(c.getColumnIndex(MarkersTableMetaData.DIRECTION)));
+								g.setTitle(c.getString(c.getColumnIndex(MarkersTableMetaData.TITLE)));
+                    	mCurrentMarkers.add(g);
+                    	mGeofences.add(g.toGeofence());
+					}
+				}
+                
+                if(!mCurrentMarkers.isEmpty()) {
                 	addGeofences();
+                	new ConnectThread(mBluetoothAdapter, mConnectedDevice, false).execute(mCurrentMarkers);
+                }
                 else {
                 	mRequestType = REQUEST_TYPE.CONNECT;
                 	mLocationClient = new LocationClient(MainActivity.this, MainActivity.this, MainActivity.this);
@@ -832,7 +848,6 @@ public class MainActivity extends FragmentActivity implements
              * request.
              */
         }
-        getContentResolver().delete(TouryProviderMetaData.MarkersTableMetaData.CONTENT_URI, null, null);
     }
 
 	@Override
